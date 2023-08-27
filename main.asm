@@ -11,6 +11,9 @@ DEF QUEUE		  EQU $D000 ; 360 pairs of bytes -> 0x2D0
 
 DEF BODY_TILE	  EQU $00
 DEF EMPTY_TILE	  EQU $08
+DEF FOOD_TILE	  EQU $07
+
+DEF LCG_X_ADDR	  EQU $C007 ; 2 bytes
 
 SECTION "vblank", ROM0[$40]
 	jp vblank_handler
@@ -42,6 +45,12 @@ WaitVBlank:
 	ld hl, $9800
 	ld bc, TilemapEnd - Tilemap
 	call memcpy
+
+	; Init the RNG
+	ld a, $AD
+	ld [LCG_X_ADDR], a
+	ld a, $DE
+	ld [LCG_X_ADDR + 1], a
 
 	; Initialize the player position and state
 	ld a, 10
@@ -83,6 +92,12 @@ WaitVBlank:
 	ld a, BODY_TILE
 	ld [hl], a
 
+	call place_food
+
+	; enable reading from the dpad
+	ld a, %00100000
+	ld [rP1], a
+
 	; LCD on
 	ld a, LCDCF_ON | LCDCF_BGON
 	ld [rLCDC], a
@@ -100,19 +115,63 @@ loop:
 
 vblank_handler:
 	ld a, [FRAME_COUNTER]
-	add a, 2
+	add a, 4
 	ld [FRAME_COUNTER], a
 	call z, move_player
 
 	reti
 
 move_player:
-	ld hl, HEAD_X
-	inc [hl]
+	check_right:
+		ld a, %00000001
+		ld hl, rP1
+		and a, [hl]
+		jp nz, check_left
+		ld hl, HEAD_X
+		inc [hl]
+		jp do_move
+
+	check_left:
+		ld a, %00000010
+		ld hl, rP1
+		and a, [hl]
+		jp nz, check_up
+		ld hl, HEAD_X
+		dec [hl]
+		jp do_move
+
+	check_up:
+		ld a, %00000100
+		ld hl, rP1
+		and a, [hl]
+		jp nz, check_down
+		ld hl, HEAD_Y
+		dec [hl]
+		jp do_move
+
+	check_down:
+		; Just default to down for now
+		ld hl, HEAD_Y
+		inc [hl]
+
+do_move:
 	call move_head
+
+	; Skip erasing the tail if the tile we moved to is a food tile
+	ld a, FOOD_TILE
+	cp a, c
+	jp nz, move_player_erase_tail
+	call place_food
+	jp move_player_done
+
+move_player_erase_tail:
 	call erase_tail
+
+move_player_done:
 	ret
 
+; out:
+;	c: previous tile at new pos
 move_head:
 	ld a, [HEAD_Y]
 	ld b, a
@@ -120,6 +179,8 @@ move_head:
 	ld c, a
 
 	call get_tile_address
+
+	ld c, [hl]
 
 	ld a, BODY_TILE
 	ld [hl], a
@@ -163,6 +224,47 @@ erase_tail:
 	ld a, d
 	ld [TAIL + 1], a
 
+	ret
+
+place_food:
+	call rand
+	; X coord
+	ld a, $0F
+	and a, l
+	ld c, a
+	; Y coord
+	ld a, $0F
+	and a, l
+	ld b, a
+
+	call get_tile_address
+	ld a, FOOD_TILE
+	ld [hl], a
+
+	ret
+
+; generates a random word using the LCG
+; out:
+;	hl: random value
+rand:
+	ld a, [LCG_X_ADDR]
+	ld l, a
+	ld a, [LCG_X_ADDR + 1]
+	ld h, a
+	push hl
+	pop de
+	; a == 5, hl contains X, so add X 4 more times to it
+	add hl, de
+	add hl, de
+	add hl, de
+	add hl, de
+	; c == 1, so increment X
+	inc hl
+	; no need to % m, since m is 2^16
+	ld a, l
+	ld [LCG_X_ADDR], a
+	ld a, h
+	ld [LCG_X_ADDR + 1], a
 	ret
 
 ; in
