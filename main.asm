@@ -15,6 +15,8 @@ DEF FOOD_TILE	  EQU $07
 
 DEF LCG_X_ADDR	  EQU $C007 ; 2 bytes
 
+DEF LAST_DIR	  EQU $C009 ; 1 byte
+
 SECTION "vblank", ROM0[$40]
 	jp vblank_handler
 
@@ -92,6 +94,10 @@ WaitVBlank:
 	ld a, BODY_TILE
 	ld [hl], a
 
+	ld hl, LAST_DIR
+	ld a, %00000001
+	ld [hl], a
+
 	call place_food
 
 	; enable reading from the dpad
@@ -115,7 +121,7 @@ loop:
 
 vblank_handler:
 	ld a, [FRAME_COUNTER]
-	add a, 4
+	add a, 8
 	ld [FRAME_COUNTER], a
 	call z, move_player
 
@@ -127,6 +133,9 @@ move_player:
 		ld hl, rP1
 		and a, [hl]
 		jp nz, check_left
+	move_right:
+		ld a, %00000001
+		ld [LAST_DIR], a
 		ld hl, HEAD_X
 		inc [hl]
 		jp do_move
@@ -136,6 +145,9 @@ move_player:
 		ld hl, rP1
 		and a, [hl]
 		jp nz, check_up
+	move_left:
+		ld a, %00000010
+		ld [LAST_DIR], a
 		ld hl, HEAD_X
 		dec [hl]
 		jp do_move
@@ -145,14 +157,39 @@ move_player:
 		ld hl, rP1
 		and a, [hl]
 		jp nz, check_down
+	move_up:
+		ld a, %00000100
+		ld [LAST_DIR], a
 		ld hl, HEAD_Y
 		dec [hl]
 		jp do_move
 
 	check_down:
-		; Just default to down for now
+		ld a, %00001000
+		ld hl, rP1
+		and a, [hl]
+		jp nz, check_last
+	move_down:
+		ld a, %00001000
+		ld [LAST_DIR], a
 		ld hl, HEAD_Y
 		inc [hl]
+		jp do_move
+
+	check_last:
+		ld hl, LAST_DIR
+		ld a, %00000001
+		and a, [hl]
+		jp nz, move_right
+		ld a, %00000010
+		and a, [hl]
+		jp nz, move_left
+		ld a, %00000100
+		and a, [hl]
+		jp nz, move_up
+		ld a, %00001000
+		and a, [hl]
+		jp nz, move_down
 
 do_move:
 	call move_head
