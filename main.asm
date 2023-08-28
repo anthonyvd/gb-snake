@@ -425,7 +425,6 @@ Tiles:
 	dw `22322232
 	dw `23232323
 	dw `33333333
-	; Paste your logo here:
 TilesEnd:
 
 Tilemap:
